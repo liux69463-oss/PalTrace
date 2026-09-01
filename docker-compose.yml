@@ -1,0 +1,45 @@
+# 本地一键验证：Trace Hub + ES 7.17 单节点
+#
+#   docker compose up -d          # 启动
+#   docker compose logs -f hub    # 看日志
+#   docker compose down -v        # 清理（含数据卷）
+#
+# 公司内网部署时不要起这里的 elasticsearch，
+# 而是把 hub 的 ES_URL 指向公司既有 ES 7.x。
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.28
+    container_name: paltrace-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    healthcheck:
+      # 镜像内无 curl，用 bash 的 /dev/tcp 做端口探测
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+
+  hub:
+    build: .
+    container_name: paltrace-trace-hub
+    environment:
+      - STORAGE_BACKEND=es
+      - ES_URL=http://elasticsearch:9200
+      - ES_INDEX_PREFIX=paltrace-spans
+      - ENABLE_GRPC=true
+      - GRPC_PORT=4317
+    ports:
+      - "8000:8000"   # 看板 + 统计 API + OTLP/HTTP(/v1/traces)
+      - "4317:4317"   # OTLP/gRPC
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  es-data:

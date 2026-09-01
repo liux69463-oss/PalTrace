@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+# ES 7.x 必须用 7.x 客户端（8.x 客户端面向 ES 8 API，body= 参数也已改名 operations=）
+elasticsearch==7.17.9
+grpcio>=1.60
+protobuf>=4.25,<6
+opentelemetry-proto>=1.27.0
+python-dotenv>=1.0
+requests>=2.31
