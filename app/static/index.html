@@ -79,6 +79,22 @@ button { font-family: inherit; }
 }
 .filter-input::placeholder { color: #c5ccd3; }
 
+/* ---------- 自定义时间范围（Start/End date+time） ---------- */
+.time-range-block { margin-bottom: 16px; }
+.time-range-block[hidden] { display: none; }
+.time-range-row {
+  display: flex; gap: 8px;
+  margin-bottom: 8px;
+}
+.time-range-row:last-child { margin-bottom: 0; }
+.time-range-row input {
+  flex: 1; min-width: 0; height: 34px;
+  border: 1px solid var(--border-dark); border-radius: 4px;
+  padding: 0 10px; font-size: 13px; color: var(--text-main);
+  background: #fff; font-family: inherit; outline: none;
+}
+.time-range-row input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(20,145,155,0.10); }
+
 /* ---------- 普通下拉 combobox（无搜索框） ---------- */
 .combo { position: relative; }
 .combo-control {
@@ -236,18 +252,162 @@ button { font-family: inherit; }
 .mini-bars { position: absolute; left: 20px; right: 20px; top: 0; bottom: 0; pointer-events: none; }
 .mini-bar { position: absolute; height: 6px; top: 50%; transform: translateY(-50%); border-radius: 3px; background: var(--primary); }
 
-/* ---------- span 详情面板（design 没有，沿用旧版的 key/value 风格） ---------- */
-.span-detail { background: #fff; border: 1px solid var(--border-color); border-radius: 4px; padding: 14px 16px; margin: 12px 20px; font-size: 12px; }
-.span-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.span-detail-head strong { font-size: 13px; }
+/* ---------- span 详情面板（Jaeger 风格：Details + GenAI 两个 tab） ---------- */
+.span-detail { background: #fff; border: 1px solid var(--border-color); border-radius: 4px; padding: 14px 16px 16px; margin: 12px 20px; font-size: 12px; }
+.span-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.span-detail-head strong { font-size: 14px; }
 .span-detail-head .badge { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 999px; padding: 1px 8px; background: #fafbfc; }
 .span-detail-head .spacer { flex: 1; }
 .span-detail-head button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--border-color); background: #fff; border-radius: 4px; cursor: pointer; color: var(--text-main); }
 .span-detail-head button:hover { background: #f0f3f7; }
-.kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; }
-.kv .k { color: var(--text-muted); }
-.kv .v { word-break: break-all; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-.span-detail-section-title { margin: 12px 0 6px; color: var(--text-muted); font-size: 12px; }
+.span-detail-meta {
+  display: flex; gap: 24px; font-size: 12px; color: var(--text-muted);
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.span-detail-meta strong { color: var(--text-main); margin-left: 4px; font-weight: 500; }
+/* Tabs */
+.span-detail-tabs { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 12px; gap: 0; }
+.span-detail-tab {
+  padding: 8px 16px; font-size: 13px; color: var(--text-secondary);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; cursor: pointer; font-family: inherit;
+}
+.span-detail-tab:hover { color: var(--text-main); }
+.span-detail-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 500; }
+.span-detail-tab-pane.hidden { display: none; }
+/* Collapsible section */
+.kv-section { margin-bottom: 14px; }
+.kv-section-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text-main);
+  cursor: pointer; user-select: none; padding: 4px 0;
+}
+.kv-section-head.no-toggle { cursor: default; }
+.kv-section-caret {
+  font-size: 10px; color: var(--text-muted); width: 12px;
+  display: inline-block; transition: transform 0.15s;
+}
+.kv-section.collapsed .kv-section-caret { transform: rotate(-90deg); }
+.kv-section.collapsed .kv-section-body { display: none; }
+.kv-section-body { padding-top: 4px; }
+.kv-empty { color: var(--text-muted); font-size: 12px; margin-left: 18px; font-style: italic; }
+.kv-rows { margin-left: 18px; font-size: 12px; }
+.kv-row {
+  display: flex; padding: 2px 0; gap: 8px; line-height: 1.5;
+  align-items: baseline;
+}
+.kv-row .k {
+  color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex-shrink: 0; word-break: break-all;
+}
+.kv-row .sep { color: var(--text-muted); flex-shrink: 0; }
+.kv-row .v {
+  color: var(--text-main); word-break: break-all; min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+/* GenAI summary */
+.genai-summary {
+  display: grid; grid-template-columns: 90px 1fr; gap: 6px 16px;
+  font-size: 13px; margin: 6px 4px 16px; line-height: 1.6;
+}
+.genai-summary .k { color: var(--text-secondary); }
+.genai-summary .v { color: var(--text-main); }
+.genai-summary .v strong { font-weight: 600; }
+/* Conversation */
+.conversation-toolbar {
+  display: flex; justify-content: flex-end; gap: 6px; margin: 6px 0 8px;
+}
+.conversation-toolbar select, .conversation-toolbar button {
+  height: 26px; font-size: 12px; padding: 0 10px;
+  border: 1px solid var(--border-color); background: #fff;
+  border-radius: 4px; color: var(--text-main); cursor: pointer; font-family: inherit;
+}
+.conversation-toolbar select {
+  padding-right: 22px; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%235f6b7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 6px center;
+}
+.conversation { border-left: 2px solid var(--border-color); padding-left: 14px; margin-left: 4px; }
+.conv-msg { margin-bottom: 14px; }
+.conv-role {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  margin-bottom: 4px; color: var(--text-secondary);
+}
+.conv-role.system { color: #7a5af5; }
+.conv-role.user { color: #14919b; }
+.conv-role.assistant { color: #0f8a72; }
+.conv-role.tool { color: #d98b0a; }
+.conv-content {
+  font-size: 13px; line-height: 1.55; color: var(--text-main);
+  word-break: break-word; white-space: pre-wrap;
+}
+.conv-content.md { white-space: normal; }
+.conv-content.md h1 { font-size: 20px; font-weight: 600; margin: 12px 0 6px; line-height: 1.3; }
+.conv-content.md h2 { font-size: 16px; font-weight: 600; margin: 10px 0 5px; line-height: 1.3; }
+.conv-content.md h3 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; }
+.conv-content.md p { margin: 6px 0; }
+.conv-content.md ul, .conv-content.md ol { margin: 6px 0 6px 20px; padding: 0; }
+.conv-content.md li { margin: 2px 0; }
+.conv-content.md code {
+  background: #f0f3f7; padding: 1px 4px; border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+.conv-content.md pre {
+  background: #f0f3f7; padding: 8px 10px; border-radius: 4px;
+  overflow-x: auto; font-size: 12px; margin: 6px 0;
+}
+.conv-content.md pre code { background: none; padding: 0; }
+.conv-content.md blockquote {
+  border-left: 3px solid var(--border-color); padding-left: 10px;
+  color: var(--text-secondary); margin: 6px 0;
+}
+.conv-content.md strong { font-weight: 600; }
+.conv-content.md em { font-style: italic; }
+.conv-content.md hr { border: none; border-top: 1px solid var(--border-color); margin: 8px 0; }
+
+/* ---------- JSON 块（Tags / Other GenAI / Conversation JSON 视图） ---------- */
+.kv-row-block {
+  display: block;     /* 覆盖默认 flex，让 key 单独一行，JSON 块独立成块 */
+  padding: 6px 0 8px;
+}
+.kv-row-block .kv-row-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+.json-block-wrap { margin: 0 0 4px; }
+.json-block-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 2px;
+}
+.json-block-label {
+  font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.json-block-toggle {
+  font: inherit; font-size: 11px; padding: 1px 8px;
+  border: 1px solid var(--border-color); background: #fff;
+  border-radius: 3px; cursor: pointer; color: var(--text-secondary);
+}
+.json-block-toggle:hover { color: var(--primary); border-color: var(--primary); }
+.json-block {
+  background: #fafbfc;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 1.5;
+  color: var(--text-main);
+  overflow-x: auto; overflow-y: auto;
+  max-height: 320px;
+  margin: 0;
+  white-space: pre;
+}
+.json-block .json-key { color: #0d7377; font-weight: 500; }
+.json-block .json-str { color: #c0392b; }
+.json-block .json-num { color: #2f6fed; }
+.json-block .json-lit { color: #7a5af5; font-style: italic; }
+.json-block-standalone { margin-top: 4px; }
 
 /* ---------- 错误横幅 ---------- */
 .banner { margin: 12px 20px 0; padding: 10px 14px; border-radius: 4px; background: #fdecea; border: 1px solid #f5c6c2; color: #8a2318; font-size: 13px; }
@@ -326,14 +486,32 @@ button { font-family: inherit; }
 
     <div class="filter-group">
       <label class="filter-label">Lookback</label>
-      <select class="filter-select" id="f-lookback">
-        <option value="300000">最近 5 分钟</option>
-        <option value="1800000">最近 30 分钟</option>
-        <option value="3600000" selected>最近 1 小时</option>
-        <option value="21600000">最近 6 小时</option>
-        <option value="86400000">最近 24 小时</option>
-        <option value="604800000">最近 7 天</option>
-      </select>
+      <div class="combo" id="combo-lookback">
+        <div class="combo-control" tabindex="0">
+          <span class="combo-value placeholder">最近 1 小时</span>
+          <button class="combo-clear" type="button" aria-label="清除" title="清除">×</button>
+          <svg class="combo-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+        <div class="combo-dropdown" hidden>
+          <div class="combo-options"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 自定义时间范围：Lookback 选 "Custom Time Range" 时显示 -->
+    <div class="filter-group time-range-block" id="custom-time-range" hidden>
+      <label class="filter-label">Start Time</label>
+      <div class="time-range-row">
+        <input type="date" id="f-start-date">
+        <input type="time" id="f-start-time" step="1">
+      </div>
+      <label class="filter-label">End Time</label>
+      <div class="time-range-row">
+        <input type="date" id="f-end-date">
+        <input type="time" id="f-end-time" step="1">
+      </div>
     </div>
 
     <div class="filter-group">
@@ -721,10 +899,42 @@ const PRESET_TO_MS = {
 };
 
 function rangeParams() {
-  const preset = document.getElementById('f-lookback').value;
+  const preset = (searchPage.combos && searchPage.combos.lookback.getValue()) || '3600000';
+  if (preset === 'custom') {
+    const s = _readCustomMs('start');
+    const e = _readCustomMs('end');
+    // 用户没填完就保留回退到 1 小时，避免误把窗口拉到 1970
+    if (s != null && e != null && s < e) return { start: s, end: e };
+  }
   const now = Date.now();
   const span = PRESET_TO_MS[preset] || 3600e3;
   return { start: now - span, end: now };
+}
+
+function _readCustomMs(kind) {
+  const d = document.getElementById(`f-${kind}-date`)?.value;
+  const t = document.getElementById(`f-${kind}-time`)?.value;
+  if (!d || !t) return null;
+  // 浏览器原生 time 输入 step="1" 给出 HH:MM:SS；兜底补 0 秒
+  const time = t.length === 5 ? `${t}:00` : t;
+  const ms = Date.parse(`${d}T${time}`);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function ensureCustomDefaults() {
+  const sd = document.getElementById('f-start-date');
+  const st = document.getElementById('f-start-time');
+  const ed = document.getElementById('f-end-date');
+  const et = document.getElementById('f-end-time');
+  const pad = n => String(n).padStart(2, '0');
+  const dateStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const timeStr = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 3600e3);
+  if (!sd.value) sd.value = dateStr(oneHourAgo);
+  if (!st.value) st.value = timeStr(oneHourAgo);
+  if (!ed.value) ed.value = dateStr(now);
+  if (!et.value) et.value = timeStr(now);
 }
 
 searchPage.bootstrap = async function() {
@@ -742,7 +952,52 @@ searchPage.bootstrap = async function() {
       placeholder: 'all',
       onChange: () => { /* 只在 Find Traces 时才生效，不主动查 */ },
     }),
+    lookback: makeCombo(document.getElementById('combo-lookback'), {
+      placeholder: '选择时间窗口',
+      onChange: v => {
+        // 自定义范围：展开 Start/End 输入框 + 给默认值
+        const block = document.getElementById('custom-time-range');
+        if (v === 'custom') {
+          block.hidden = false;
+          ensureCustomDefaults();
+        } else {
+          block.hidden = true;
+        }
+        this.loadServices();
+        this.loadOperations();
+        this.find();
+      },
+    }),
   };
+  // 填充 lookback 静态选项 + 设默认（最近 1 小时）
+  this.combos.lookback.setOptions([
+    { value: '300000',     label: '最近 5 分钟' },
+    { value: '1800000',    label: '最近 30 分钟' },
+    { value: '3600000',    label: '最近 1 小时' },
+    { value: '21600000',   label: '最近 6 小时' },
+    { value: '86400000',   label: '最近 24 小时' },
+    { value: '604800000',  label: '最近 7 天' },
+    { value: 'custom',     label: 'Custom Time Range' },
+  ]);
+  this.combos.lookback.setValue('3600000');
+
+  // 自定义时间范围输入变化 → 触发重查
+  ['f-start-date', 'f-start-time', 'f-end-date', 'f-end-time'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      if (this.combos.lookback.getValue() === 'custom') {
+        // 校验：start < end 才查；不合法只提示不查
+        const s = _readCustomMs('start');
+        const e = _readCustomMs('end');
+        if (s != null && e != null && s < e) {
+          this.loadServices();
+          this.loadOperations();
+          this.find();
+        } else if (s != null && e != null && s >= e) {
+          showError('Start time 必须早于 End time');
+        }
+      }
+    });
+  });
 
   await Promise.all([this.loadServices(), this.loadOperations()]);
   await this.find();
@@ -914,8 +1169,13 @@ document.getElementById('f-reset').onclick = () => {
   // 重置 combo：清空选中并重拉数据
   searchPage.combos.service.setValue('');
   searchPage.combos.operation.setValue('');
+  searchPage.combos.lookback.setValue('3600000');
+  // 清空自定义时间范围 + 隐藏
+  ['f-start-date', 'f-start-time', 'f-end-date', 'f-end-time'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('custom-time-range').hidden = true;
   document.getElementById('f-tags').value = '';
-  document.getElementById('f-lookback').value = '3600000';
   document.getElementById('f-min-dur').value = '';
   document.getElementById('f-max-dur').value = '';
   document.getElementById('f-limit').value = '20';
@@ -926,12 +1186,7 @@ document.getElementById('f-reset').onclick = () => {
 ['f-min-dur', 'f-max-dur'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => searchPage.applyClientFilter());
 });
-// 切换 lookback 时：重拉下拉框 + 重查
-document.getElementById('f-lookback').onchange = () => {
-  searchPage.loadServices();
-  searchPage.loadOperations();
-  searchPage.find();
-};
+// 切 lookback 由 combo onChange 自动处理（loadServices + loadOperations + find）
 
 // 点页面其他地方时关闭所有 combo 下拉
 document.addEventListener('mousedown', e => {
@@ -1163,26 +1418,236 @@ document.getElementById('btn-collapse-all').onclick = () => {
   renderTraceAll();
 };
 
+/* ============================================================
+ * Span 详情：Jaeger 风格（Details / GenAI 两个 tab）
+ * ============================================================ */
+
+// 解析 Google GenerativeAI / OpenAI 风格的 messages 数组：
+//   可能是 JSON 字符串，也可能是已经解析的数组
+//   单条 message 可能是 {role, parts:[{type,content}]} 或 {role, content}
+function _parseMessages(raw) {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : (() => { try { return JSON.parse(raw); } catch (_) { return []; } })();
+  return arr.map(m => ({
+    role: (m.role || m.author || 'user').toString(),
+    content: _extractParts(m.parts != null ? m.parts : m.content),
+  })).filter(m => m.content);
+}
+function _extractParts(p) {
+  if (p == null) return '';
+  if (typeof p === 'string') return p;
+  if (Array.isArray(p)) {
+    return p.map(item => {
+      if (typeof item === 'string') return item;
+      if (item.content != null) return typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+      if (item.text != null) return item.text;
+      return JSON.stringify(item);
+    }).join('\n');
+  }
+  return JSON.stringify(p);
+}
+
+// 极简安全 markdown：先 HTML escape，再做白名单替换；不会引入 XSS
+function renderMarkdown(text) {
+  if (!text) return '';
+  let h = esc(text);
+  // 1. code fence（先处理，避免内部被下面的规则改）
+  h = h.replace(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g, (_, code) => `<pre><code>${code}</code></pre>`);
+  // 2. inline code
+  h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  // 3. headings（行首）
+  h = h.replace(/^###### (.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^#### (.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  // 4. bold / italic
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  // 5. lists：把连续的 "- xxx" / "* xxx" 行打包成 <ul>
+  h = h.replace(/(^|\n)((?:[-*] [^\n]+\n?)+)/g, (m, pre, block) => {
+    const items = block.trim().split('\n').map(line => `<li>${line.replace(/^[-*] /, '')}</li>`).join('');
+    return `${pre}<ul>${items}</ul>`;
+  });
+  h = h.replace(/(^|\n)((?:\d+\. [^\n]+\n?)+)/g, (m, pre, block) => {
+    const items = block.trim().split('\n').map(line => `<li>${line.replace(/^\d+\. /, '')}</li>`).join('');
+    return `${pre}<ol>${items}</ol>`;
+  });
+  // 6. blockquote
+  h = h.replace(/(^|\n)&gt; ([^\n]+)/g, '$1<blockquote>$2</blockquote>');
+  // 7. horizontal rule
+  h = h.replace(/^---+$/gm, '<hr>');
+  // 8. 段落：双换行 → </p><p>；单换行 → <br>
+  h = h.replace(/\n{2,}/g, '</p><p>');
+  h = h.replace(/\n/g, '<br>');
+  // 9. 包裹 <p>
+  if (!/^<(h\d|ul|ol|pre|blockquote|p|hr)/.test(h)) h = '<p>' + h + '</p>';
+  return h;
+}
+
+// 把任意值规范成 pretty-print 的 JSON 字符串；非 JSON 输入原样返回
+function _normalizeToJson(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+      try { return JSON.stringify(JSON.parse(v), null, 2); } catch (_) { return v; }
+    }
+    return v;
+  }
+  if (typeof v === 'object') return JSON.stringify(v, null, 2);
+  return String(v);
+}
+
+// 判断是否值得用 JSON 块展示（而不是 inline 单行）
+function _looksLikeJson(v) {
+  if (v == null) return false;
+  if (typeof v === 'object') return true;          // 数组/对象直接当 JSON
+  if (typeof v !== 'string') return false;
+  const t = v.trim();
+  return t.length > 60 && ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']')));
+}
+
+// 简易 JSON 语法高亮（HTML 安全的白名单着色）
+function _highlightJson(json) {
+  let h = esc(json);
+  h = h.replace(/(&quot;[^&\n]*?&quot;)(\s*:)/g, '<span class="json-key">$1</span>$2');
+  h = h.replace(/:\s*(&quot;[^&\n]*?&quot;)/g, ': <span class="json-str">$1</span>');
+  h = h.replace(/:\s*(\b-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g, ': <span class="json-num">$1</span>');
+  h = h.replace(/\b(true|false|null)\b/g, '<span class="json-lit">$1</span>');
+  return h;
+}
+
+// 渲染一个 JSON 块（带高亮）；点击标题可在折叠/展开之间切
+function renderJsonBlock(raw, label = 'JSON') {
+  const json = _normalizeToJson(raw);
+  const dataStr = esc(json);
+  return `<div class="json-block-wrap">
+    <div class="json-block-head">
+      <span class="json-block-label">${esc(label)}</span>
+      <button class="json-block-toggle" data-action="copy" data-text='${dataStr}'>Copy</button>
+    </div>
+    <pre class="json-block">${_highlightJson(json)}</pre>
+  </div>`;
+}
+
+// 渲染单个 key=value 行；JSON-like 的值自动用 JSON 块展示
+function renderKvRow(k, v) {
+  if (_looksLikeJson(v)) {
+    return `<div class="kv-row kv-row-block">
+      <div class="kv-row-key">${esc(k)}</div>
+      ${renderJsonBlock(v)}
+    </div>`;
+  }
+  let display;
+  if (v == null) display = '';
+  else if (typeof v === 'object') display = JSON.stringify(v);
+  else display = String(v);
+  return `<div class="kv-row"><span class="k">${esc(k)}</span><span class="sep">=</span><span class="v">${esc(display)}</span></div>`;
+}
+
+// 渲染一组 key=value
+function renderKvSection(title, entries, { collapsed = false, noToggle = false } = {}) {
+  const items = entries.length
+    ? `<div class="kv-rows">${entries.map(([k, v]) => renderKvRow(k, v)).join('')}</div>`
+    : '<div class="kv-empty">(empty)</div>';
+  const cls = `kv-section${collapsed ? ' collapsed' : ''}`;
+  const headCls = `kv-section-head${noToggle ? ' no-toggle' : ''}`;
+  const caret = noToggle ? '' : '<span class="kv-section-caret">▾</span>';
+  return `<div class="${cls}">
+    <div class="${headCls}">${caret}<span>${esc(title)}</span></div>
+    <div class="kv-section-body">${items}</div>
+  </div>`;
+}
+
+// GenAI 专属摘要（Provider / Model / Tokens）
+function renderGenAISummary(attrs) {
+  const provider = attrs['gen_ai.provider.name'];
+  const model = attrs['gen_ai.response.model'] || attrs['gen_ai.request.model'];
+  const inT = attrs['gen_ai.usage.input_tokens'] ?? attrs['gen_ai.usage.prompt_tokens'];
+  const outT = attrs['gen_ai.usage.output_tokens'] ?? attrs['gen_ai.usage.completion_tokens'];
+  const v = x => x == null ? '<span style="color:var(--text-muted)">-</span>' : esc(String(x));
+  const tokenBlock = (inT != null || outT != null)
+    ? `Input <strong>${fmt(inT || 0)}</strong> &nbsp; Output <strong>${fmt(outT || 0)}</strong>`
+    : '<span style="color:var(--text-muted)">-</span>';
+  return `<div class="genai-summary">
+    <div class="k">Provider</div><div class="v">${v(provider)}</div>
+    <div class="k">Model</div><div class="v">${v(model)}</div>
+    <div class="k">Tokens</div><div class="v">${tokenBlock}</div>
+  </div>`;
+}
+
+// Conversation 渲染（按 role 排版，带 Markdown/Text/JSON 切换 + Copy）
+function renderConversationSection(inputMsgs, outputMsgs, sysInstr) {
+  const sysMsgs  = _parseMessages(sysInstr);
+  const inputParsed  = _parseMessages(inputMsgs);
+  const outputParsed = _parseMessages(outputMsgs);
+  const messages = [...sysMsgs, ...inputParsed, ...outputParsed];
+  if (!messages.length) return '';
+  const dataStr = esc(JSON.stringify(messages));
+  // 同时把原始 JSON 也备一份（用于 "JSON" 视图）
+  const rawJson = [sysInstr, inputMsgs, outputMsgs].filter(Boolean).join('\n');
+  const rawDataStr = esc(rawJson);
+  const body = messages.map(m => {
+    const roleLower = m.role.toLowerCase();
+    return `<div class="conv-msg">
+      <div class="conv-role ${esc(roleLower)}">${esc(m.role.toUpperCase())}</div>
+      <div class="conv-content md" data-raw="${esc(m.content)}">${renderMarkdown(m.content)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="kv-section" id="conv-section">
+    <div class="kv-section-head no-toggle"><span>Conversation</span></div>
+    <div class="conversation-toolbar">
+      <select id="conv-fmt">
+        <option value="markdown" selected>Markdown</option>
+        <option value="text">Text</option>
+        <option value="json">JSON</option>
+      </select>
+      <button id="conv-copy" data-messages='${dataStr}'>Copy</button>
+    </div>
+    <div class="conversation" id="conv-body">${body}</div>
+    <div class="conv-raw-json hidden" id="conv-raw-json" data-raw='${rawDataStr}'></div>
+  </div>`;
+}
+
 function selectSpan(spanId) {
   tvSelectedSpan = spanId;
   renderTraceAll();
-  // 详情面板
   const s = tvSpans.find(x => x.span_id === spanId);
   if (!s) return;
-  const fields = [
-    ['service', s.service], ['span_name', s.span_name],
-    ['span_id', s.span_id], ['parent_span_id', s.parent_span_id || '(root)'],
-    ['kind', s.kind], ['operation', s.operation],
-    ['start', formatTimestamp(s.start_time)], ['duration', formatDuration(s.duration_ms)], ['status', s.status],
-  ];
-  if (s.model) fields.push(['model', s.model]);
-  if (s.tool_name) fields.push(['tool_name', s.tool_name]);
-  if (s.total_tokens)
-    fields.push(['tokens', `${fmt(s.input_tokens)} in / ${fmt(s.output_tokens)} out`]);
-
   const attrs = s.attributes || {};
-  const keys = Object.keys(attrs).sort();
-  const cell = (k, v) => `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`;
+  const allKeys = Object.keys(attrs).sort();
+  const hasGenAI = allKeys.some(k => k.startsWith('gen_ai.'));
+
+  // Process 数据直接取 s.process（OTLP resource 里的 deployment.*/service.*/telemetry.*/host.*/os.*），
+  // 而不是从 span attrs 里启发式筛选——这样对每条 trace 真正"全局"的属性都展示。
+  const processObj = s.process || {};
+  const processEntries = Object.entries(processObj).sort(([a], [b]) => a.localeCompare(b));
+  // Tags：span 自身的属性（不含 process——不在 attrs 里，也跟 processEntries 不重叠）
+  const tagEntries = allKeys.map(k => [k, attrs[k]]);
+
+  const detailsPane = renderKvSection('Tags', tagEntries) + renderKvSection('Process', processEntries);
+
+  // GenAI tab
+  let genaiPane = '';
+  if (hasGenAI) {
+    const covered = new Set([
+      'gen_ai.provider.name', 'gen_ai.response.model', 'gen_ai.request.model',
+      'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens',
+      'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens',
+      'gen_ai.input.messages', 'gen_ai.output.messages', 'gen_ai.system_instructions',
+    ]);
+    const otherGenAI = allKeys.filter(k => k.startsWith('gen_ai.') && !covered.has(k))
+                                  .map(k => [k, attrs[k]]);
+    const conv = renderConversationSection(
+      attrs['gen_ai.input.messages'],
+      attrs['gen_ai.output.messages'],
+      attrs['gen_ai.system_instructions'],
+    );
+    genaiPane = renderGenAISummary(attrs)
+      + conv
+      + renderKvSection('Other GenAI Attributes', otherGenAI, { collapsed: true });
+  }
 
   document.getElementById('span-detail-container').innerHTML = `
     <div class="span-detail">
@@ -1193,15 +1658,100 @@ function selectSpan(spanId) {
         <span class="spacer"></span>
         <button id="sd-copy">复制 span_id</button>
       </div>
-      <div class="kv">${fields.map(([k, v]) => cell(k, v)).join('')}</div>
-      <div class="span-detail-section-title">属性 (${keys.length})</div>
-      <div class="kv">${keys.length
-        ? keys.map(k => cell(k, typeof attrs[k] === 'object' ? JSON.stringify(attrs[k]) : attrs[k])).join('')
-        : cell('-', '（无）')}</div>
+      <div class="span-detail-meta">
+        <span>Service:<strong>${esc(s.service || '')}</strong></span>
+        <span>Duration:<strong>${esc(formatDuration(s.duration_ms))}</strong></span>
+        <span>Start Time:<strong>${esc(formatTimestamp(s.start_time))}</strong></span>
+      </div>
+      <div class="span-detail-tabs">
+        <button class="span-detail-tab active" data-tab="details">Details</button>
+        ${hasGenAI ? '<button class="span-detail-tab" data-tab="genai">GenAI</button>' : ''}
+      </div>
+      <div class="span-detail-tab-pane" data-pane="details">${detailsPane}</div>
+      ${hasGenAI ? `<div class="span-detail-tab-pane hidden" data-pane="genai">${genaiPane}</div>` : ''}
     </div>`;
+
+  // Tab 切换
+  document.querySelectorAll('.span-detail-tab').forEach(t => {
+    t.onclick = () => {
+      document.querySelectorAll('.span-detail-tab').forEach(x => x.classList.toggle('active', x === t));
+      const target = t.dataset.tab;
+      document.querySelectorAll('.span-detail-tab-pane').forEach(p => {
+        p.classList.toggle('hidden', p.dataset.pane !== target);
+      });
+    };
+  });
+  // Collapsible 折叠/展开
+  document.querySelectorAll('.span-detail .kv-section-head').forEach(h => {
+    if (h.classList.contains('no-toggle')) return;
+    h.onclick = () => h.parentElement.classList.toggle('collapsed');
+  });
+  // 复制 span_id
   const btn = document.getElementById('sd-copy');
   if (btn && navigator.clipboard) btn.onclick = () => navigator.clipboard.writeText(s.span_id || '');
-  // 滚到详情面板
+  // 复制 conversation（基于当前选中的视图模式）
+  const convCopy = document.getElementById('conv-copy');
+  if (convCopy && navigator.clipboard) {
+    convCopy.onclick = () => {
+      const mode = document.getElementById('conv-fmt')?.value || 'markdown';
+      let text;
+      if (mode === 'json') {
+        text = document.getElementById('conv-raw-json')?.dataset.raw || '';
+      } else {
+        const msgs = JSON.parse(convCopy.dataset.messages || '[]');
+        text = msgs.map(m => `[${m.role.toUpperCase()}]\n${m.content}`).join('\n\n---\n\n');
+      }
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = convCopy.textContent;
+        convCopy.textContent = 'Copied!';
+        setTimeout(() => convCopy.textContent = orig, 1200);
+      });
+    };
+  }
+  // Markdown / Text / JSON 切换
+  const convFmt = document.getElementById('conv-fmt');
+  const convBody = document.getElementById('conv-body');
+  const convRawJson = document.getElementById('conv-raw-json');
+  if (convFmt && convBody && convRawJson) {
+    // 首次进入：把 raw JSON 渲染成高亮块（懒渲染）
+    if (!convRawJson.innerHTML) {
+      const raw = convRawJson.dataset.raw || '';
+      convRawJson.innerHTML = renderJsonBlock(raw, 'messages').replace('json-block-wrap', 'json-block-wrap json-block-standalone');
+    }
+    convFmt.onchange = e => {
+      const mode = e.target.value;
+      if (mode === 'json') {
+        convBody.classList.add('hidden');
+        convRawJson.classList.remove('hidden');
+      } else {
+        convBody.classList.remove('hidden');
+        convRawJson.classList.add('hidden');
+        document.querySelectorAll('#conv-body .conv-content').forEach(el => {
+          const raw = el.dataset.raw || '';
+          if (mode === 'markdown') {
+            el.classList.add('md');
+            el.innerHTML = renderMarkdown(raw);
+          } else {
+            el.classList.remove('md');
+            el.textContent = raw;
+          }
+        });
+      }
+    };
+  }
+  // 通用 JSON 块的 Copy 按钮（Tags / Other GenAI 里的）
+  document.querySelectorAll('.json-block-toggle[data-action="copy"]').forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      const text = b.dataset.text || '';
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = b.textContent;
+        b.textContent = 'Copied!';
+        setTimeout(() => b.textContent = orig, 1200);
+      });
+    };
+  });
+
   document.getElementById('span-detail-container').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 

@@ -127,6 +127,9 @@ def _template_body(prefix: str) -> Dict[str, Any]:
                     # 属性是开放字典：动态建索引会导致 field explosion（每个新 key 都进 mapping）。
                     # 设为 dynamic:false —— 仍完整保留在 _source 中可回查/重建索引，但不建索引。
                     "attributes": {"type": "object", "dynamic": False},
+                    # process 级属性（resource 上的 deployment.*/service.*/telemetry.* 等），
+                    # 跟 Jaeger Process 面板展示范围对齐；dynamic:false 防 field explosion
+                    "process": {"type": "object", "dynamic": False},
                 }
             },
         },

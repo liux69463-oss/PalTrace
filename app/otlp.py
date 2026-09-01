@@ -199,6 +199,25 @@ def flatten_span(span: Dict[str, Any], service: str, drop_attributes: Iterable[s
     }
 
 
+# 哪些 resource 属性算"process 级"（对齐 Jaeger Process 面板的展示范围）。
+# 注意：service.name 单独抽出来做 service 字段；这里只放附属信息。
+_PROCESS_KEY_PREFIXES = (
+    "deployment.", "process.", "telemetry.", "host.", "os.",
+    "service.namespace", "service.version", "service.instance.",
+)
+
+
+def _extract_process(resource_attrs: Dict[str, Any]) -> Dict[str, Any]:
+    """从 resource attrs 里抽出 process 级属性（deployment.* / service.* / telemetry.* 等）。
+
+    Jaeger 的 Process 面板展示的是这些"对一条 trace 整体生效"的属性。
+    """
+    return {
+        k: v for k, v in resource_attrs.items()
+        if any(k == p.rstrip(".") or k.startswith(p) for p in _PROCESS_KEY_PREFIXES)
+    }
+
+
 def flatten_payload(payload: Dict[str, Any], drop_attributes: Iterable[str]) -> List[Dict[str, Any]]:
     """OTLP ExportTraceServiceRequest(dict) -> span 文档列表。"""
     docs: List[Dict[str, Any]] = []
@@ -210,7 +229,13 @@ def flatten_payload(payload: Dict[str, Any], drop_attributes: Iterable[str]) -> 
             if "key" in item
         }
         service = resource_attrs.get("service.name") or "unknown"
+        # 抽 process 级属性，挂到每个 span 上（同一 trace 内 resource 一致，所以重复存也没问题；
+        # 否则 ES 查时还得 join，复杂度上升一档）
+        process = _extract_process(resource_attrs)
         for scope_span in resource_span.get("scopeSpans") or []:
             for span in scope_span.get("spans") or []:
-                docs.append(flatten_span(span, service, drop_attributes))
+                doc = flatten_span(span, service, drop_attributes)
+                if process:
+                    doc["process"] = process
+                docs.append(doc)
     return docs
