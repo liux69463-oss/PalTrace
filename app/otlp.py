@@ -204,6 +204,7 @@ def flatten_span(span: Dict[str, Any], service: str, drop_attributes: Iterable[s
 _PROCESS_KEY_PREFIXES = (
     "deployment.", "process.", "telemetry.", "host.", "os.",
     "service.namespace", "service.version", "service.instance.",
+    "qwenpaw.",          # qwenpaw.* 资源属性（如 qwenpaw.user）算 process 级，进详情 Process 面板
 )
 
 
@@ -232,10 +233,15 @@ def flatten_payload(payload: Dict[str, Any], drop_attributes: Iterable[str]) -> 
         # 抽 process 级属性，挂到每个 span 上（同一 trace 内 resource 一致，所以重复存也没问题；
         # 否则 ES 查时还得 join，复杂度上升一档）
         process = _extract_process(resource_attrs)
+        # qwenpaw.user 单独抽出做顶层 user 字段：mapping 里是可索引 keyword，
+        # 支持按用户过滤/聚合（process 里的那份 dynamic:false，只能展示不能查）
+        user = resource_attrs.get("qwenpaw.user")
         for scope_span in resource_span.get("scopeSpans") or []:
             for span in scope_span.get("spans") or []:
                 doc = flatten_span(span, service, drop_attributes)
                 if process:
                     doc["process"] = process
+                if user:
+                    doc["user"] = str(user)
                 docs.append(doc)
     return docs

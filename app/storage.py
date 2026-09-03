@@ -75,6 +75,7 @@ def _trace_meta(spans: List[Dict[str, Any]], truncated: bool) -> Dict[str, Any]:
         "span_count": len(spans),
         "truncated": truncated,
         "services": sorted({(s.get("service") or "unknown") for s in spans}),
+        "user": next((s.get("user") for s in spans if s.get("user")), None),
         "start": start,
         "end": int(end),
         "duration_ms": round(max(end - start, 0.0), 3),
@@ -112,6 +113,8 @@ def _template_body(prefix: str) -> Dict[str, Any]:
                     "span_id": {"type": "keyword"},
                     "parent_span_id": {"type": "keyword"},
                     "service": {"type": "keyword"},
+                    # 用户标识（来自 resource 属性 qwenpaw.user），顶层 keyword 可索引可过滤
+                    "user": {"type": "keyword"},
                     "span_name": {"type": "keyword"},
                     "kind": {"type": "keyword"},
                     "operation": {"type": "keyword"},
@@ -165,12 +168,14 @@ class Storage(ABC):
         operation: Optional[str] = None,
         start_ms: Optional[int] = None,
         end_ms: Optional[int] = None,
+        service: Optional[str] = None,
+        user: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """近期 trace 列表，支持 operation 过滤与时间范围。
+        """近期 trace 列表，支持 operation / service / user 过滤与时间范围。
 
         时间范围：显式传 start_ms/end_ms（epoch 毫秒）时优先，否则回退到 hours 窗口。
-        operation：只返回**包含**该 operation span 的 trace；
-        但返回的 spans / total_tokens / service 仍是**整条 trace** 的真实统计
+        operation / service / user：只决定「哪些 trace 入选」——
+        返回的 spans / total_tokens / service 仍是**整条 trace** 的真实统计
         （见 ADR-11，避免"列表 Span=3、点进去 13"的语义割裂）。
         """
         ...
@@ -199,6 +204,17 @@ class Storage(ABC):
         end_ms: Optional[int] = None,
     ) -> Dict[str, Any]:
         """该时间窗内出现过的 service 列表及 span 数，供前端过滤下拉框使用。"""
+        ...
+
+    @abstractmethod
+    def list_users(
+        self,
+        hours: int,
+        size: int = 50,
+        start_ms: Optional[int] = None,
+        end_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """该时间窗内出现过的 user 列表及 span 数，供前端过滤下拉框使用。"""
         ...
 
     @abstractmethod
@@ -297,6 +313,8 @@ class MemoryStorage(Storage):
         operation: Optional[str] = None,
         start_ms: Optional[int] = None,
         end_ms: Optional[int] = None,
+        service: Optional[str] = None,
+        user: Optional[str] = None,
     ) -> Dict[str, Any]:
         start, end = _resolve_range(hours, start_ms, end_ms)
         # 用 start_time 而不是 @timestamp：start_time 是 span 真正开始的时间，
@@ -307,16 +325,20 @@ class MemoryStorage(Storage):
         # 「这段时间内开始的 span 所属的 trace 都算命中」。
         window = [s for s in self._spans if start <= (s.get("start_time") or 0) <= end]
 
-        # 阶段一：决定哪些 trace 入选。operation 只影响"入选"，不影响统计口径（ADR-11）
-        if operation:
+        # 阶段一：决定哪些 trace 入选。operation / service / user 只影响"入选"，不影响统计口径（ADR-11）
+        def _hit(s: Dict[str, Any]) -> bool:
+            if not s.get("trace_id"):
+                return False
             # 用 _compound_op 派生后比对——与 /api/operations 下拉里看到的口径一致
-            hit_ids = {
-                s["trace_id"] for s in window
-                if _compound_op(s.get("operation"), s.get("model"), s.get("tool_name")) == operation
-                and s.get("trace_id")
-            }
-        else:
-            hit_ids = {s["trace_id"] for s in window if s.get("trace_id")}
+            if operation and _compound_op(s.get("operation"), s.get("model"), s.get("tool_name")) != operation:
+                return False
+            if service and (s.get("service") or "") != service:
+                return False
+            if user and (s.get("user") or "") != user:
+                return False
+            return True
+
+        hit_ids = {s["trace_id"] for s in window if _hit(s)}
 
         # 阶段二：统计基于该 trace 的**全部** span
         acc: Dict[str, Dict[str, Any]] = defaultdict(
@@ -325,6 +347,7 @@ class MemoryStorage(Storage):
                 "start_time": None, "end_time": None,
                 "services": set(), "service_spans": defaultdict(int),
                 "operations": set(),
+                "users": set(),
                 "root_span": None,    # 最早开始的 span（最像 root）
             }
         )
@@ -340,6 +363,8 @@ class MemoryStorage(Storage):
             item["services"].add(svc)
             item["service_spans"][svc] += 1
             item["operations"].add(span.get("operation") or "internal")
+            if span.get("user"):
+                item["users"].add(span["user"])
             st = span.get("start_time") or 0
             et = st + (span.get("duration_ms") or 0.0)
             if item["start_time"] is None or st < item["start_time"]:
@@ -370,6 +395,7 @@ class MemoryStorage(Storage):
                 "services": services,
                 "service_spans": dict(v["service_spans"]),
                 "operations": sorted(v["operations"]),
+                "user": ", ".join(sorted(v["users"])) or None,
                 "duration_ms": round(duration, 3),
                 "start_time": int(v["start_time"]) if v["start_time"] else 0,
                 "trace_name": trace_name,
@@ -414,6 +440,25 @@ class MemoryStorage(Storage):
                 counts[span.get("service") or "unknown"] += 1
         items = [{"service": k, "count": v} for k, v in counts.items()]
         items.sort(key=lambda x: (-x["count"], x["service"]))
+        return {"items": items[:size]}
+
+    def list_users(
+        self,
+        hours: int,
+        size: int = 50,
+        start_ms: Optional[int] = None,
+        end_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        start, end = _resolve_range(hours, start_ms, end_ms)
+        counts: Dict[str, int] = defaultdict(int)
+        # 用 start_time 过滤——见 recent_traces 的注释；无 user 字段的 span 不计入
+        for span in self._spans:
+            if start <= (span.get("start_time") or 0) <= end:
+                u = span.get("user")
+                if u:
+                    counts[u] += 1
+        items = [{"user": k, "count": v} for k, v in counts.items()]
+        items.sort(key=lambda x: (-x["count"], x["user"]))
         return {"items": items[:size]}
 
     def get_trace(self, trace_id: str, limit: int = 1000) -> Dict[str, Any]:
@@ -654,20 +699,30 @@ class EsStorage(Storage):
         operation: Optional[str] = None,
         start_ms: Optional[int] = None,
         end_ms: Optional[int] = None,
+        service: Optional[str] = None,
+        user: Optional[str] = None,
     ) -> Dict[str, Any]:
         start, end = _resolve_range(hours, start_ms, end_ms)
         # 显式毫秒而非 now-{hours}h 相对表达式：可控、可缓存友好，且与 Memory 后端口径一致
         time_filter: Dict[str, Any] = {"range": {"@timestamp": {"gte": start, "lte": end}}}
 
-        # ---- 阶段一：operation 只决定「哪些 trace 入选」，并按最近时间排序（ADR-11）----
+        # ---- 阶段一：operation / service / user 只决定「哪些 trace 入选」，并按最近时间排序（ADR-11）----
+        # 先锁定入选的 trace_id 集合，阶段二统计整条 trace（与 Memory 后端口径完全一致）
         ordered_ids: Optional[List[str]] = None
-        if operation:
-            # 走 `compound_op` runtime field：与下拉里展示的"操作名"完全对齐，
+        if operation or service or user:
+            # operation 走 `compound_op` runtime field：与下拉里展示的"操作名"完全对齐，
             # 老数据 (operation 粗粒度) 和新数据 (operation 已复合) 都能命中
+            filters: List[Dict[str, Any]] = [time_filter]
+            if operation:
+                filters.append({"term": {"compound_op": operation}})
+            if service:
+                filters.append({"term": {"service": service}})
+            if user:
+                filters.append({"term": {"user": user}})
             body: Dict[str, Any] = {
                 "size": 0,
                 "runtime_mappings": _COMPOUND_OP_RUNTIME,
-                "query": {"bool": {"filter": [time_filter, {"term": {"compound_op": operation}}]}},
+                "query": {"bool": {"filter": filters}},
                 "aggs": {
                     "by_trace": {
                         "terms": {
@@ -723,6 +778,7 @@ class EsStorage(Storage):
                         },
                         "services": {"terms": {"field": "service", "size": 5}},
                         "operations": {"terms": {"field": "operation", "size": 10}},
+                        "users": {"terms": {"field": "user", "size": 5}},
                     },
                 }
             },
@@ -756,6 +812,7 @@ class EsStorage(Storage):
             max_end = _int(bucket.get("last_ts", {}).get("value"))
             duration_ms = round(max((max_end or 0) - (min_start or 0), 0.0), 3)
 
+            users = sorted(u for u in (b.get("key") for b in bucket.get("users", {}).get("buckets", [])) if u)
             by_id[bucket.get("key")] = {
                 "trace_id": bucket.get("key"),
                 "spans": bucket.get("doc_count", 0),
@@ -765,6 +822,7 @@ class EsStorage(Storage):
                 "services": services,
                 "service_spans": service_spans,
                 "operations": sorted(b.get("key") for b in ops_buckets if b.get("key")),
+                "user": ", ".join(users) or None,
                 "duration_ms": duration_ms,
                 "start_time": int(min_start) if min_start else 0,
                 "trace_name": trace_name,
@@ -831,6 +889,35 @@ class EsStorage(Storage):
         return {
             "items": [
                 {"service": b.get("key"), "count": b.get("doc_count", 0)}
+                for b in buckets
+            ]
+        }
+
+    def list_users(
+        self,
+        hours: int,
+        size: int = 50,
+        start_ms: Optional[int] = None,
+        end_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        start, end = _resolve_range(hours, start_ms, end_ms)
+        body = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"range": {"@timestamp": {"gte": start, "lte": end}}},
+                        {"exists": {"field": "user"}},  # 无 user 的旧数据不占位
+                    ]
+                }
+            },
+            "aggs": {"by_user": {"terms": {"field": "user", "size": size}}},
+        }
+        res = self._search(body)
+        buckets = res.get("aggregations", {}).get("by_user", {}).get("buckets", [])
+        return {
+            "items": [
+                {"user": b.get("key"), "count": b.get("doc_count", 0)}
                 for b in buckets
             ]
         }

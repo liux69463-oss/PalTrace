@@ -464,6 +464,22 @@ button { font-family: inherit; }
     </div>
 
     <div class="filter-group">
+      <label class="filter-label">User (<span class="combo-count" data-count-for="user">-</span>)</label>
+      <div class="combo" id="combo-user">
+        <div class="combo-control" tabindex="0">
+          <span class="combo-value placeholder">全部</span>
+          <button class="combo-clear" type="button" aria-label="清除" title="清除">×</button>
+          <svg class="combo-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+        <div class="combo-dropdown" hidden>
+          <div class="combo-options"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="filter-group">
       <label class="filter-label">Operation (<span class="combo-count" data-count-for="operation">-</span>)</label>
       <div class="combo" id="combo-operation">
         <div class="combo-control" tabindex="0">
@@ -578,13 +594,14 @@ button { font-family: inherit; }
             <th style="width: 30px;"><input type="checkbox" class="table-checkbox" id="select-all"></th>
             <th>Trace Name <span class="sort-icon">↕</span></th>
             <th>Services</th>
+            <th style="width: 96px;">User</th>
             <th>Spans <span class="sort-icon">↕</span></th>
             <th>Duration <span class="sort-icon">↕</span></th>
             <th>Start Time <span class="sort-icon">↕</span></th>
           </tr>
         </thead>
         <tbody id="results-tbody">
-          <tr><td colspan="6" class="empty">点击 Find Traces 查询</td></tr>
+          <tr><td colspan="7" class="empty">点击 Find Traces 查询</td></tr>
         </tbody>
       </table>
     </div>
@@ -948,6 +965,13 @@ searchPage.bootstrap = async function() {
         this.find();
       },
     }),
+    user: makeCombo(document.getElementById('combo-user'), {
+      placeholder: '全部',
+      onChange: () => {
+        // user 不级联其他下拉，直接重查（可与 service/operation 组合）
+        this.find();
+      },
+    }),
     operation: makeCombo(document.getElementById('combo-operation'), {
       placeholder: 'all',
       onChange: () => { /* 只在 Find Traces 时才生效，不主动查 */ },
@@ -999,7 +1023,7 @@ searchPage.bootstrap = async function() {
     });
   });
 
-  await Promise.all([this.loadServices(), this.loadOperations()]);
+  await Promise.all([this.loadServices(), this.loadOperations(), this.loadUsers()]);
   await this.find();
 };
 
@@ -1013,6 +1037,21 @@ searchPage.loadServices = async function() {
       items.map(i => ({ value: i.service, label: i.service, count: i.count }))
     );
     // 保留当前选中（即使不在新列表里也保留显示）
+    countEl.textContent = items.length;
+  } catch (e) {
+    countEl.textContent = '?';
+  }
+};
+
+searchPage.loadUsers = async function() {
+  const { start, end } = rangeParams();
+  const countEl = document.querySelector('.combo-count[data-count-for="user"]');
+  try {
+    const d = await getJSON(`/api/users?start=${start}&end=${end}`);
+    const items = d.items || [];
+    this.combos.user.setOptions(
+      items.map(i => ({ value: i.user, label: i.user, count: i.count }))
+    );
     countEl.textContent = items.length;
   } catch (e) {
     countEl.textContent = '?';
@@ -1048,11 +1087,13 @@ searchPage.find = async function() {
   const { start, end } = rangeParams();
   const svc = this.combos.service.getValue();
   const op = this.combos.operation.getValue();
+  const usr = this.combos.user.getValue();
   const limit = Math.max(1, Math.min(200, parseInt(document.getElementById('f-limit').value) || 20));
 
   const params = new URLSearchParams({ start, end, size: limit });
   if (svc) params.set('service', svc);
   if (op) params.set('operation', op);
+  if (usr) params.set('user', usr);
 
   const t0 = performance.now();
   try {
@@ -1091,7 +1132,7 @@ function renderTable() {
   const items = searchPage.filteredResults;
   const tbody = document.getElementById('results-tbody');
   if (!items.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">无匹配的 trace</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">无匹配的 trace</td></tr>';
     return;
   }
   const maxDur = Math.max(...items.map(t => t.duration_ms || 0), 1);
@@ -1104,6 +1145,7 @@ function renderTable() {
       <td><input type="checkbox" class="table-checkbox"></td>
       <td><a class="trace-name" data-tid="${esc(t.trace_id)}" title="${esc(t.trace_name)}">${esc(t.trace_name)}</a></td>
       <td><div class="service-badges">${svcHtml}</div></td>
+      <td class="user-cell">${t.user ? esc(t.user) : '<span style="color:var(--text-muted)">—</span>'}</td>
       <td class="spans-cell">${fmt(t.spans)}</td>
       <td>
         <div class="duration-cell">
@@ -1168,6 +1210,7 @@ document.getElementById('f-find').onclick = () => searchPage.find();
 document.getElementById('f-reset').onclick = () => {
   // 重置 combo：清空选中并重拉数据
   searchPage.combos.service.setValue('');
+  searchPage.combos.user.setValue('');
   searchPage.combos.operation.setValue('');
   searchPage.combos.lookback.setValue('3600000');
   // 清空自定义时间范围 + 隐藏
@@ -1181,6 +1224,7 @@ document.getElementById('f-reset').onclick = () => {
   document.getElementById('f-limit').value = '20';
   // 重置相当于 service 清空，operation 要按新（无 service）级联刷新
   searchPage.loadOperations();
+  searchPage.loadUsers();
   searchPage.find();
 };
 ['f-min-dur', 'f-max-dur'].forEach(id => {
@@ -1228,6 +1272,7 @@ async function openTrace(traceId) {
       ['Trace Start', formatTimestamp(m.start)],
       ['Duration', formatDuration(m.duration_ms)],
       ['Services', fmt((m.services || []).length)],
+      ['User', m.user || '—'],
       ['Depth', fmt(maxDepth(tvSpans))],
       ['Total Spans', fmt(m.span_count)],
       m.errors ? null : null,

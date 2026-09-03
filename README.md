@@ -157,6 +157,22 @@ export OTEL_PYTHON_DISABLED_INSTRUMENTATIONS="fastapi, starlette, requests, urll
 > 如 `POST /api/console/chat` 被调用 1424 次）。只禁用 `requests` / `httpx` 等**不会**减少噪声，
 > 因为真正的刷屏源头是 fastapi。加上这两项后，span 数从 2479 降到约 8 个真实 span。
 
+### 附带采集的信息（resource 属性）
+
+采集端可通过 `OTEL_RESOURCE_ATTRIBUTES` 注入自定义属性，PalTrace 会按前缀挑选：
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES=qwenpaw.user=liuxin,deployment.environment=prod
+```
+
+| 属性 | 落库位置 | 用途 |
+|---|---|---|
+| `service.name` | 顶层 `service` | trace 列表 / 服务聚合（必需） |
+| `qwenpaw.user` | 顶层 `user`（keyword，**可索引**）+ `process` 面板 | trace 列表 User 列、详情页 User 统计；看板可按 User 过滤（`/api/users` 下拉，可与 service/operation 组合） |
+| `deployment.*` / `process.*` / `telemetry.*` / `host.*` / `os.*` / `service.namespace` / `service.version` / `service.instance.` / `qwenpaw.*` | `process` 对象（`dynamic:false`） | 详情页 Process 面板展示；不建索引，不能用于过滤 |
+
+> `process` 是 `dynamic:false`：完整保留在 `_source`（可回查、可重建索引），但不建索引，防止 field explosion。
+
 ---
 
 ## 三、接口一览

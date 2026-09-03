@@ -6,6 +6,15 @@
 - 仓库：`/Users/liuxin/Documents/GitHub/PalTrace`
 - **QwenPaw 在另一个仓库**：`/Users/liuxin/Documents/GitHub/QwenPal`。本仓库只是接收端，不要以为能在这里启动 QwenPaw。
 
+## 上游 QwenPaw 数据源现状（2026-09-02 核实）
+
+- **metrics 管线在上游已就绪**：`QwenPal/plugins/loongsuite-otel/qwenpaw_otel_plugin.py` 自建私有 `MeterProvider` + `PeriodicExportingMetricReader` + `OTLPMetricExporter`，目标 = `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` 或 `{OTEL_EXPORTER_OTLP_ENDPOINT}/v1/metrics`（endpoint 默认 `http://localhost:4318`）。provider 显式传给 `AgentScopeInstrumentor().instrument(meter_provider=...)`。
+- **编码是 OTLP/HTTP + protobuf**（`otlp.proto.http` exporter 默认），不是 JSON——PalTrace 接 `/v1/metrics` 必须支持 protobuf。
+- **instrumentor 确实产 metrics**（`loongsuite-instrumentation-agentscope`，QwenPal pin `~=0.8.0`，PyPI 最新即 0.8.0）：两个标准直方图 `gen_ai.client.operation.duration`（秒）、`gen_ai.client.token.usage`（token，带 `gen_ai.token.type=input/completion`）。维度：`gen_ai.system`、`gen_ai.operation.name`、`gen_ai.request.model`、`server.address/port`、`error.type`（GenAI semconv 1.30.0）。→ **"按模型切分现成、预聚合不扫全量 span"的说法成立**。
+- **metrics 没有 user 维度**：user 只在 span/resource（`qwenpaw.user`）里，metrics 直方图帮不上按 user 统计。
+- QwenPal 仓库内**没有自建 metric 代码**（搜 `create_histogram|get_meter` 只命中插件接管线那几行），指标全靠 instrumentor。
+- 本机**未安装** loongsuite-instrumentation-agentscope（`python3 -c import` 失败、find 无结果），无法本地读源码，上述结论来自 PyPI README + deepwiki。
+
 ## 架构与硬约定
 
 - 单端口 FastAPI：`:8000` 同时提供 `POST /v1/traces`（OTLP/HTTP，JSON + protobuf 双编码）、`GET /api/*`、看板 `/`；另有 gRPC `:4317`。
@@ -15,6 +24,17 @@
 - **看板零外部依赖**（公司内网无外网）：不引任何 CDN / 图表库，纯 CSS + 原生 JS，单页 `app/static/index.html`。新增功能务必保持 0 外部请求。
 - 索引按天 `paltrace-spans-YYYY.MM.DD`；`attributes` 设 `dynamic: false`（不建索引但保留 `_source`，防 field explosion，且可供后续取用）。
 - 隐私：默认丢弃 `gen_ai.prompt` / `gen_ai.completion`。
+
+## ES mapping 变更规则（加字段时的操作铁律）
+
+- **加新字段不需要删历史数据、不需要 reindex**。旧索引缺该字段完全合法：terms 聚合跳过、term 过滤不匹配、`_source` 里没有该 key（前端显示 `—`），全程不报错。
+- **index template 只影响新建索引**。已存在的索引（尤其当日那个）必须手动 `PUT /<index>/_mapping` 补字段。
+- **不补的后果不是"旧数据报错"，而是"新字段被动态推断成 text"**——template 顶层没设 `dynamic`，ES 默认 `true`：
+  - `terms` 聚合该字段 → 400 `Fielddata is disabled on text fields`（**真报错**）
+  - `term` 精确过滤 → 静默失效（值含 `/` 会被分词，如 `liuxin/80376130` 匹配不到）
+- **唯一必须删数据 / reindex 的情况**：字段已被动态映射成某类型又要改成别的类型（如 text→keyword），ES 报 `mapper [x] cannot be changed from type ...`。
+- **操作顺序铁律**：改代码 → 补 mapping → 再放新数据进来。顺序反了就只能 reindex。
+- 自查命令：`curl 'localhost:9200/<prefix>-*/_mapping/field/<field>'`——返回 `{"type":"keyword"}` 且**没有** `.keyword` 子字段 = 显式 mapping 正确。
 
 ## 索引前缀
 

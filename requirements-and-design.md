@@ -157,8 +157,9 @@ LoongSuite 启用了 `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`�
 | GET | `/api/tokens` | token 消耗（按模型） |
 | GET | `/api/latency` | 耗时分位（按操作） |
 | GET | `/api/tools` | 工具调用 TOP |
-| GET | `/api/traces` | 近期 trace 列表，支持 `operation` 过滤 + `start`/`end` 时间范围 + 两者组合（设计见 `trace-query-design.md`） |
-| GET | `/api/operations` | 时间窗内出现过的 operation 列表（供过滤下拉框） |
+| GET | `/api/traces` | 近期 trace 列表，支持 `operation` / `service` / `user` 过滤 + `start`/`end` 时间范围 + 任意组合（设计见 `trace-query-design.md`） |
+| GET | `/api/operations` | 时间窗内出现过的 operation 列表（供过滤下拉框，支持 `service` 级联） |
+| GET | `/api/users` | 时间窗内出现过的 user 列表及 span 数（供 User 过滤下拉框） |
 | GET | `/api/traces/{trace_id}` | 单条 trace 全量 span + 元信息（树视图用；**不带时间窗**，见 `trace-tree-design.md` §4.1） |
 | GET | `/` | 看板页面 |
 | GET | `/healthz` | 健康检查 |

@@ -53,7 +53,7 @@ def _attrs(pairs: dict) -> list:
     return out
 
 
-def build_payload(service: str, with_error: bool = False) -> dict:
+def build_payload(service: str, with_error: bool = False, user: str = "") -> dict:
     trace_id = _hex(16)
     spans: list = []
     cursor = int(time.time() * NS)
@@ -134,14 +134,13 @@ def build_payload(service: str, with_error: bool = False) -> dict:
     # 此时 cursor 已越过最后一个子 span（含间隔），再加余量即为 root 的结束时间
     root["endTimeUnixNano"] = str(cursor + int(MARGIN_MS * 1_000_000))
 
+    res_attrs = {"service.name": service, "telemetry.sdk.language": "python"}
+    if user:
+        res_attrs["qwenpaw.user"] = user
     return {
         "resourceSpans": [
             {
-                "resource": {
-                    "attributes": _attrs(
-                        {"service.name": service, "telemetry.sdk.language": "python"}
-                    )
-                },
+                "resource": {"attributes": _attrs(res_attrs)},
                 "scopeSpans": [
                     {"scope": {"name": "loongsuite.instrumentation.agentscope"}, "spans": spans}
                 ],
@@ -178,6 +177,7 @@ def main() -> int:
     ap.add_argument("--mode", choices=["both", "http", "grpc"], default="both")
     ap.add_argument("--traces", type=int, default=2, help="每种协议发送多少条 trace")
     ap.add_argument("--service", default="paltrace")
+    ap.add_argument("--user", default="", help="设置 resource 属性 qwenpaw.user（用户标识，验证按用户采集）")
     args = ap.parse_args()
 
     ok = True
@@ -185,7 +185,7 @@ def main() -> int:
 
     for mode in modes:
         for i in range(args.traces):
-            payload = build_payload(args.service, with_error=(i % 2 == 1))
+            payload = build_payload(args.service, with_error=(i % 2 == 1), user=args.user)
             try:
                 if mode == "http":
                     send_http(args.http_url, payload)

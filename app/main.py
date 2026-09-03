@@ -157,18 +157,20 @@ def api_traces(
     hours: int = Query(config.DEFAULT_HOURS, ge=1, le=24 * 30),
     size: int = Query(20, ge=1, le=200),
     operation: Optional[str] = Query(None, description="只看该 operation 的 trace"),
+    service: Optional[str] = Query(None, description="只看含该 service span 的 trace"),
+    user: Optional[str] = Query(None, description="只看该 user 的 trace"),
     start: Optional[int] = Query(None, description="起始时间（epoch 毫秒）"),
     end: Optional[int] = Query(None, description="结束时间（epoch 毫秒）"),
 ):
-    """trace 列表：支持 operation 过滤 + 时间范围 + 两者组合。
+    """trace 列表：支持 operation / service / user 过滤 + 时间范围 + 任意组合。
 
-    显式 start/end 优先于 hours。operation 只决定「哪些 trace 入选」，
+    显式 start/end 优先于 hours。过滤条件只决定「哪些 trace 入选」，
     返回的 spans / total_tokens 仍是整条 trace 的真实统计（见 ADR-11）。
     """
     err = _range_error(start, end)
     if err:
         return JSONResponse(status_code=400, content={"error": err})
-    return _safe(lambda: storage.recent_traces(hours, size, operation, start, end))
+    return _safe(lambda: storage.recent_traces(hours, size, operation, start, end, service, user))
 
 
 @app.get("/api/operations")
@@ -202,6 +204,20 @@ def api_services(
     if err:
         return JSONResponse(status_code=400, content={"error": err})
     return _safe(lambda: storage.list_services(hours, size, start, end))
+
+
+@app.get("/api/users")
+def api_users(
+    hours: int = Query(config.DEFAULT_HOURS, ge=1, le=24 * 30),
+    size: int = Query(50, ge=1, le=200),
+    start: Optional[int] = Query(None, description="起始时间（epoch 毫秒）"),
+    end: Optional[int] = Query(None, description="结束时间（epoch 毫秒）"),
+):
+    """时间窗内出现过的 user 列表及 span 数，供看板过滤下拉框使用。"""
+    err = _range_error(start, end)
+    if err:
+        return JSONResponse(status_code=400, content={"error": err})
+    return _safe(lambda: storage.list_users(hours, size, start, end))
 
 
 @app.get("/api/traces/{trace_id:path}")
