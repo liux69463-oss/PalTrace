@@ -212,13 +212,16 @@ button { font-family: inherit; }
 .stat-value { color: var(--text-main); font-weight: 500; }
 .trace-timeline { display: flex; flex: 1; background: #fff; min-height: calc(100vh - 48px - 56px - 42px - 40px); }
 .trace-tree-panel { width: 340px; border-right: 1px solid var(--border-color); flex-shrink: 0; overflow: auto; }
-.tree-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: #f7f8f9; position: sticky; top: 0; z-index: 1; }
+/* 表头高度须与右侧 .timeline-ruler（32px）一致，保证两栏第一行从同一水平线开始 */
+.tree-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 14px; border-bottom: 1px solid var(--border-color); background: #f7f8f9; position: sticky; top: 0; z-index: 1; }
 .tree-header-title { font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
 .tree-nav { display: flex; gap: 4px; }
 .tree-nav-btn { width: 24px; height: 24px; border: 1px solid var(--border-dark); background: #fff; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); cursor: pointer; }
 .tree-nav-btn:hover { border-color: var(--primary); color: var(--primary); }
 .tree-content { padding: 8px 0; }
-.tree-row { display: flex; align-items: center; padding: 5px 14px; font-size: 12px; color: var(--text-main); cursor: pointer; min-height: 26px; }
+/* 行高必须与右侧 .timeline-row（30px）严格一致：两列是独立容器，
+   行高哪怕差 1px 也会逐行累积成明显错位。固定 height 而非 min-height。 */
+.tree-row { display: flex; align-items: center; height: 30px; padding: 0 14px; font-size: 12px; color: var(--text-main); cursor: pointer; }
 .tree-row:hover { background: #f7fbfc; }
 .tree-row.sel { background: #eaf1fd; }
 .tree-row .indent { display: inline-block; flex-shrink: 0; }
@@ -237,8 +240,8 @@ button { font-family: inherit; }
 .timeline-ruler-mark:last-child { text-align: right; }
 .timeline-ruler-mark:last-child::before { left: 100%; }
 .timeline-rows { position: relative; min-width: 800px; padding: 8px 20px; }
-.timeline-row { height: 28px; position: relative; margin-bottom: 2px; }
-.timeline-bar { position: absolute; height: 14px; top: 7px; border-radius: 3px; background: var(--primary); border: 1px solid rgba(0,0,0,0.08); cursor: pointer; }
+.timeline-row { height: 30px; position: relative; }   /* 高度与 .tree-row 严格一致（30px） */
+.timeline-bar { position: absolute; height: 14px; top: 8px; border-radius: 3px; background: var(--primary); border: 1px solid rgba(0,0,0,0.08); cursor: pointer; }
 .timeline-bar:hover { filter: brightness(1.1); }
 .timeline-bar.dark { background: #0d5c63; }
 .timeline-bar.medium { background: #1a7a82; }

@@ -13,6 +13,10 @@ from typing import Any, Callable, Dict, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+# 接收端点是 async def，但落库走的是同步的 elasticsearch-py 客户端。
+# 直接在事件循环里调同步 IO 会阻塞整个 loop，把所有请求串行化；
+# 丢进线程池即可与其他请求并发（统计接口用 def 由 FastAPI 自动丢线程池，同理）。
+from starlette.concurrency import run_in_threadpool
 
 from . import config
 from .otlp import flatten_payload
@@ -40,7 +44,9 @@ def handle_payload(payload: Dict[str, Any]) -> int:
     docs = flatten_payload(payload, config.DROP_ATTRIBUTES)
     if docs:
         storage.index(docs)
-        logger.info("接收 %s 个 span", len(docs))
+        # 高频路径不落 INFO 日志：500 QPS 下就是每秒 500 行，
+        # 既是磁盘开销，logging 的线程锁也会成为并发争用点。
+        logger.debug("接收 %s 个 span", len(docs))
     return len(docs)
 
 
@@ -98,7 +104,9 @@ async def otlp_http(request: Request):
     if not isinstance(payload, dict):
         return JSONResponse(status_code=400, content={"error": "body must be a JSON object"})
 
-    handle_payload(payload)
+    # 落库是同步 IO（elasticsearch-py 7.x 同步客户端），必须丢进线程池，
+    # 否则会阻塞整个事件循环，把所有并发请求（含统计 API）串行化。
+    await run_in_threadpool(handle_payload, payload)
     # 严格遵循 OTLP 响应语义：exporter 只看状态码，返回空对象即可
     return {}
 

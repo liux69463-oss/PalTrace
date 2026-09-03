@@ -42,7 +42,7 @@ PalTrace（基于 AgentScope 的个人助手）通过 **LoongSuite** 做无侵�
 | FR-1 | 接收 OTLP trace | P0 | 支持 **gRPC :4317**（LoongSuite 默认）与 **HTTP/JSON**（复用 FastAPI 端口，默认 `:8000/v1/traces`）两种协议，避免强制改采集端配置 |
 | FR-2 | 解析并归一化 span | P0 | 提取 trace/span/parent、service、name、kind、起止时间、status |
 | FR-3 | 提取 `gen_ai.*` 指标 | P0 | operation、model、input/output tokens、tool name |
-| FR-4 | 持久化到 ES 7.x | P0 | 按天索引，带 index template 固定 mapping |
+| FR-4 | 持久化到 ES 7.x | P0 | **按月**索引（`ES_INDEX_GRANULARITY` 可切回按天），带 index template 固定 mapping |
 | FR-5 | 统计接口 | P0 | 概览、token 消耗（按模型）、耗时分位、工具调用 TOP、错误率、近期 trace 列表 |
 | FR-6 | 看板展示 | P0 | 单页看板，自动刷新，可读即可 |
 
@@ -54,7 +54,8 @@ PalTrace（基于 AgentScope 的个人助手）通过 **LoongSuite** 做无侵�
 | NFR-2 | 隐私/合规 | 默认**丢弃** `gen_ai.prompt` / `gen_ai.completion`（可能含用户输入），不入库 |
 | NFR-3 | 语义约定版本兼容 | `gen_ai` 有 stable 与 experimental 两套命名，取数需双版本兜底 |
 | NFR-4 | 易部署/易验证 | 提供 `memory` 后端，无 ES 也能一键冒烟；`docker-compose.yml` 含本地 ES 7.17 |
-| NFR-5 | 配置外置 | ES 地址/账号/索引前缀/后端类型全部走环境变量 |
+| NFR-5 | 配置外置 | ES 地址/账号/索引前缀/索引粒度/分片数全部走环境变量 |
+| NFR-6 | 接收端并发 | 同步落库经 `run_in_threadpool` 丢线程池（避免阻塞事件循环）；ES 后端无状态，支持 uvicorn 多 worker 与多实例水平扩容 |
 
 ### 2.3 明确不做（Out of Scope，后续优化）
 
@@ -63,7 +64,7 @@ PalTrace（基于 AgentScope 的个人助手）通过 **LoongSuite** 做无侵�
 - 采样、背压、限流
 - 鉴权与多租户
 - metrics / logs 接入
-- ILM rollover（先用按天索引 + 定时清理）
+- ILM rollover（先用按月索引 + 按索引删除清理）
 - 告警
 
 ---
@@ -82,7 +83,7 @@ PalTrace ──LoongSuite(OTLP)──► Trace Hub (FastAPI)
                                  └─ main.py     /api/* 统计接口 + 静态看板 /
                                         │
                                         ▼
-                                    ES 7.x  paltrace-spans-YYYY.MM.DD
+                                    ES 7.x  paltrace-spans-YYYY.MM（可切回 -YYYY.MM.DD）
 ```
 
 **关键设计：gRPC 与 HTTP 共用一套解析逻辑。**
@@ -123,11 +124,17 @@ LoongSuite 启用了 `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`�
 
 ### 3.4 存储设计
 
-- **索引**：按天 `paltrace-spans-YYYY.MM.DD`（前缀可配）
-- **Index Template**：`PUT _index_template/paltrace-spans`，固定 keyword/long/date 类型，避免动态映射把 `model` 映射成 text 导致无法聚合
-- **写入**：批量 `bulk`，每次请求一次 batch
+- **索引**：按月 `paltrace-spans-YYYY.MM`（前缀可配；`ES_INDEX_GRANULARITY=day` 可切回 `-YYYY.MM.DD`）。
+  两种命名都匹配 `<prefix>-*`，可共存——切换后历史索引照常可查，**无需迁移或 reindex**
+- **Index Template**：`PUT _index_template/paltrace-spans`，固定 keyword/long/date 类型，避免动态映射把 `model` 映射成 text 导致无法聚合。
+  分片/副本数可配（`ES_SHARDS` / `ES_REPLICAS`），但**只对新建索引生效**
+- **写入**：`bulk`，每个 OTLP 请求一个 batch。默认**不**强制 refresh（`ES_REFRESH=false`），
+  交由 ES 的 `refresh_interval` 兜底——强制 refresh 会让每次 bulk 都生成新 segment，吞吐差一个数量级
 - **客户端**：`elasticsearch==7.17.9`。**必须用 7.x 客户端**——8.x 客户端面向 ES 8 API，且 `bulk()` 参数由 `body=` 改名为 `operations=`，混用会直接报错
-- **Memory 后端**：环形缓冲区（默认上限 20000 条），用于无 ES 时的冒烟测试与本地开发
+- **并发**：客户端是**同步**的，而接收端点是 `async def`，故落库必须经 `run_in_threadpool` 丢进线程池
+  ——否则同步 IO 会阻塞事件循环，把所有请求（含统计 API）串行化
+- **Memory 后端**：环形缓冲区（默认上限 20000 条），用于无 ES 时的冒烟测试与本地开发。
+  数据在进程内存里，**不能多 worker / 多实例**（各进程各存一份，看板每次命中的进程不同、结果会跳变）
 
 ### 3.5 统计口径
 
@@ -204,7 +211,7 @@ LoongSuite 启用了 `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`�
 | ES 聚合基数爆炸（高基数字段做 terms） | 内存/性能问题 | 已限制 `size`；后续对高基数字段改用 composite agg |
 | 单条请求 span 数过多 | 写入抖动 | 后续加批量缓冲（攒批/定时 flush） |
 | 无鉴权，端点裸奔 | 内网可用但可被任意写入 | 后续加 token 校验或网络策略限制来源 |
-| 按天索引无清理 | 磁盘增长 | 后续加 ILM 或定时清理 Job |
+| 按月索引无清理 | 磁盘增长 | 清理动作本身很简单：`DELETE paltrace-spans-YYYY.MM`；量大到需要自动化时再上 ILM |
 
 **后续优化优先级建议**：
 1. 火焰图聚合视图 / span 属性检索（~~trace 树视图~~ 已于 v0.2.0 完成）
@@ -217,6 +224,8 @@ LoongSuite 启用了 `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`�
 
 ## 6. 验证方案
 
-1. **冒烟（无 ES）**：`STORAGE_BACKEND=memory` 启动 → 发送合成 OTLP 数据（HTTP + gRPC 各一条）→ 校验统计接口与看板
-2. **端到端（ES）**：`docker-compose up` 起 ES 7.17 → `STORAGE_BACKEND=es` → 同样发送 → 校验 ES 中确实生成索引且统计一致
-3. **真机对接**：PalTrace 侧设 `OTEL_EXPORTER_OTLP_ENDPOINT=http://<receiver>:4317` + `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`，`loongsuite-instrument` 启动后看板应有数据
+1. **冒烟（无 ES）**：`STORAGE_BACKEND=memory` 启动 → 发送合成 OTLP 数据 → 校验统计接口与看板
+2. **端到端（ES）**：`docker-compose up` 起 ES 7.17 → `STORAGE_BACKEND=es` → 同样发送 →
+   校验 ES 中确实生成 **`paltrace-spans-YYYY.MM`** 索引且统计一致
+3. **真机对接**：采集端设 `OTEL_EXPORTER_OTLP_ENDPOINT=http://<hub-host>:8000` +
+   `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`（gRPC 默认已关闭），启动后看板应有数据

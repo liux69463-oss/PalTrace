@@ -100,13 +100,20 @@ def _resolve_range(
     return now - int(hours) * 3600 * 1000, now
 
 
-def _template_body(prefix: str) -> Dict[str, Any]:
-    """固定 mapping，避免动态映射把 model/operation 推断成 text 导致无法聚合。"""
+def _template_body(prefix: str, shards: int = 1, replicas: int = 0) -> Dict[str, Any]:
+    """固定 mapping，避免动态映射把 model/operation 推断成 text 导致无法聚合。
+
+    shards / replicas 只对「新建」索引生效——改配置后已存在的索引不会跟着变。
+    要立刻生效需手动 PUT <index>/_settings：副本数可随时改，主分片数不可改（须 reindex）。
+    """
     return {
         "index_patterns": [f"{prefix}-*"],
         "priority": 200,
         "template": {
-            "settings": {"number_of_shards": 1, "number_of_replicas": 0},
+            "settings": {
+                "number_of_shards": shards,
+                "number_of_replicas": replicas,
+            },
             "mappings": {
                 "properties": {
                     "trace_id": {"type": "keyword"},
@@ -484,7 +491,10 @@ class EsStorage(Storage):
         password: str = "",
         index_prefix: str = "paltrace-spans",
         verify_certs: bool = False,
-        refresh: bool = True,
+        refresh: bool = False,
+        granularity: str = "month",
+        shards: int = 1,
+        replicas: int = 0,
     ):
         kwargs: Dict[str, Any] = {"verify_certs": verify_certs}
         if user:
@@ -492,11 +502,15 @@ class EsStorage(Storage):
         self.es = Elasticsearch([url], **kwargs)
         self.prefix = index_prefix
         self.refresh = refresh
+        # 只认 "month"，其它任何值（含手抖拼错）一律按天，避免生成异常索引名
+        self.granularity: str = "month" if granularity == "month" else "day"
+        self.shards: int = shards
+        self.replicas: int = replicas
         self._ensure_template()
 
     # ---------- 写入 ----------
     def _ensure_template(self) -> None:
-        body = _template_body(self.prefix)
+        body = _template_body(self.prefix, self.shards, self.replicas)
         try:
             self.es.indices.put_index_template(name=self.prefix, body=body)
             logger.info("index template 已就绪: %s", self.prefix)
@@ -515,7 +529,11 @@ class EsStorage(Storage):
             logger.warning("index template 创建失败（写入仍可继续，但 mapping 非最优）: %s", exc)
 
     def _index_name(self) -> str:
-        return f"{self.prefix}-{datetime.now(timezone.utc).strftime('%Y.%m.%d')}"
+        # month -> paltrace-spans-2026.09  ；day -> paltrace-spans-2026.09.03
+        # 两种粒度都落在 <prefix>-* 通配符下，可共存：
+        # 切换粒度后历史索引照常被查询覆盖，无需迁移或 reindex。
+        fmt = "%Y.%m" if self.granularity == "month" else "%Y.%m.%d"
+        return f"{self.prefix}-{datetime.now(timezone.utc).strftime(fmt)}"
 
     def index(self, docs: List[Dict[str, Any]]) -> int:
         if not docs:
@@ -956,7 +974,15 @@ def build_storage() -> Storage:
         logger.info("存储后端: memory（上限 %s 条，仅用于冒烟/开发）", config.MEMORY_MAX_SPANS)
         return MemoryStorage(max_spans=config.MEMORY_MAX_SPANS)
 
-    logger.info("存储后端: es -> %s (prefix=%s)", config.ES_URL, config.ES_INDEX_PREFIX)
+    logger.info(
+        "存储后端: es -> %s (prefix=%s, 粒度=%s, shards=%s, replicas=%s, refresh=%s)",
+        config.ES_URL,
+        config.ES_INDEX_PREFIX,
+        config.ES_INDEX_GRANULARITY,
+        config.ES_SHARDS,
+        config.ES_REPLICAS,
+        config.ES_REFRESH,
+    )
     storage = EsStorage(
         url=config.ES_URL,
         user=config.ES_USER,
@@ -964,6 +990,9 @@ def build_storage() -> Storage:
         index_prefix=config.ES_INDEX_PREFIX,
         verify_certs=config.ES_VERIFY_CERTS,
         refresh=config.ES_REFRESH,
+        granularity=config.ES_INDEX_GRANULARITY,
+        shards=config.ES_SHARDS,
+        replicas=config.ES_REPLICAS,
     )
     try:
         info = storage.es.info()

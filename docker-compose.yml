@@ -32,11 +32,16 @@ services:
       - STORAGE_BACKEND=es
       - ES_URL=http://elasticsearch:9200
       - ES_INDEX_PREFIX=paltrace-spans
-      - ENABLE_GRPC=true
-      - GRPC_PORT=4317
+      # 单节点 ES 无法分配副本，必须为 0，否则索引恒为 yellow（可读写但不健康）
+      - ES_REPLICAS=0
+      - ES_SHARDS=1
+      # 多 worker 下只有首个进程能 bind 4317，故本地默认关闭 gRPC。
+      # 需要验证 gRPC 时：ENABLE_GRPC=true + UVICORN_WORKERS=1 + 放开下面 4317 端口。
+      - ENABLE_GRPC=false
+      - UVICORN_WORKERS=2
     ports:
       - "8000:8000"   # 看板 + 统计 API + OTLP/HTTP(/v1/traces)
-      - "4317:4317"   # OTLP/gRPC
+      # - "4317:4317" # OTLP/gRPC（需配合 ENABLE_GRPC=true + UVICORN_WORKERS=1）
     depends_on:
       elasticsearch:
         condition: service_healthy

@@ -15,9 +15,10 @@ proto3 JSON 规范行为，验证接收端的 _to_int 兼容。
 耗时带随机抖动，使 p99 与真实 max 可区分（否则统计口径问题验证不出来）。
 
 用法：
-    python send_test_trace.py                  # http + grpc 各发一次
+    python send_test_trace.py                  # 默认只发 http（服务端 gRPC 默认已关闭）
     python send_test_trace.py --mode http
-    python send_test_trace.py --mode grpc --traces 3
+    python send_test_trace.py --mode grpc --traces 3   # 需服务端 ENABLE_GRPC=true
+    python send_test_trace.py --mode both              # 同上
 """
 import argparse
 import random
@@ -174,7 +175,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--http-url", default="http://localhost:8000")
     ap.add_argument("--grpc-target", default="localhost:4317")
-    ap.add_argument("--mode", choices=["both", "http", "grpc"], default="both")
+    # 默认只发 http：服务端的 gRPC 接收默认已关闭（且与多 worker 互斥），发 gRPC 会直接失败
+    ap.add_argument("--mode", choices=["both", "http", "grpc"], default="http")
     ap.add_argument("--traces", type=int, default=2, help="每种协议发送多少条 trace")
     ap.add_argument("--service", default="paltrace")
     ap.add_argument("--user", default="", help="设置 resource 属性 qwenpaw.user（用户标识，验证按用户采集）")

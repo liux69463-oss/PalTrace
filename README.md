@@ -5,8 +5,8 @@
 
 ```
 PalTrace ──LoongSuite(OTLP)──► Trace Hub ──► ES 7.x ──► 统计看板 + 调用链树视图
-                                 ├─ gRPC  :4317（可关闭，见「快速开始」）
-                                 └─ HTTP  :8000/v1/traces
+                                 ├─ gRPC  :4317（默认关闭；与多 worker 互斥，开启须 --workers 1）
+                                 └─ HTTP  :8000/v1/traces（默认接收协议）
 ```
 
 设计文档：
@@ -53,21 +53,31 @@ docker compose up -d elasticsearch
 curl -s http://localhost:9200
 
 # 3) 启动 PalTrace（es 后端）
+#    ES_REFRESH=true 只为本地调试（写入后立刻能在看板看到）；
+#    生产不要加这一行（默认 false）——每次 bulk 都强制 ES 刷新，吞吐差一个数量级。
 ENABLE_GRPC=false \
 STORAGE_BACKEND=es \
 ES_URL=http://localhost:9200 \
 ES_INDEX_PREFIX=paltrace-spans \
 ES_REFRESH=true \
-./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
 ```
+
+> ⚠️ **`--workers` 只能配 `es` 后端。** `memory` 后端的数据在进程内存里，
+> 多进程会各存一份，看板每次刷新命中的进程不同、结果会跳变。
 
 > 公司环境请**不要**用 compose 里的 elasticsearch，改为把 `ES_URL` 指向公司既有 ES 7.x。
 
-**关于 `ENABLE_GRPC=false`**（可选，但同机跑 Jaeger 时强烈建议）：
+**关于 `ENABLE_GRPC`（默认 `false`）**：
 
-Jaeger v2 自带 OTel 自埋点，其 OTLP exporter **默认指向 `localhost:4317`**，与 PalTrace 的 gRPC 端口相同，
-会把 Jaeger 的自描述 trace（如 `/api/v3/operations`，每条约 1 分钟一条）灌进 PalTrace 污染统计。
-关掉 gRPC 即可切断。QwenPaw 走 HTTP 上报（`:8000`）时不受影响，所以关掉没有副作用。
+- 生产走 **OTLP/HTTP**：短连接，L4 负载均衡即可把请求分摊到多个实例。
+  而 gRPC 是 HTTP/2 长连接，L4 只做**连接级**均衡——一个客户端建连后所有请求都打到同一实例，加实例无效。
+- gRPC 与 **uvicorn 多 worker 互斥**：`--workers N` 会 fork 出 N 个进程，
+  只有第一个能 bind `:4317`，其余报 `Address already in use`（已捕获为 warning，不影响 HTTP）。
+- 顺带切断 Jaeger 污染：Jaeger v2 自带 OTel 自埋点，其 exporter 默认指向 `localhost:4317`，
+  会把自描述 trace（如 `/api/v3/operations`，约每 1 分钟一条）灌进 PalTrace。
+
+确需 gRPC 时：`ENABLE_GRPC=true` 且 `--workers 1`。
 
 ### 验证启动结果
 
@@ -90,7 +100,8 @@ curl -s localhost:8000/openapi.json | grep trace_id
 ./.venv/bin/python send_test_trace.py --mode http --traces 2
 ```
 
-> 用 `--mode http` 而非 `both`：`both` 会同时发 gRPC 到 `:4317`，而上面关闭了 gRPC，那一半会失败。
+> `send_test_trace.py` 默认就是 `--mode http`（服务端 gRPC 默认关闭，发 gRPC 会失败）。
+> 要验证 gRPC 用 `--mode grpc`，前提是服务端 `ENABLE_GRPC=true` 且 `--workers 1`。
 
 打开 <http://localhost:8000> 看板，应立刻看到 token / 耗时 / 工具调用统计；
 点「近期 Trace」表里的 Trace ID 可展开调用链（span 树 + 时间瀑布 + 属性详情）。
@@ -110,7 +121,7 @@ curl -s localhost:8000/openapi.json | grep trace_id
 
 ## 二、PalTrace 对接（LoongSuite 侧配置）
 
-### 走 gRPC（推荐，LoongSuite 默认协议，端口即标准 4317）
+### 走 gRPC（默认关闭；LoongSuite 默认协议，端口即标准 4317）
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://<hub-host>:4317
@@ -122,10 +133,11 @@ loongsuite-instrument --traces_exporter otlp --service_name paltrace \
   python app.py
 ```
 
-> **前提**：PalTrace 侧必须开着 gRPC 接收（`ENABLE_GRPC=true`，`config.py` 的默认值即是）。
-> 若你直接照 [`.env.example`](.env.example) 抄的配置，那里默认写的是 `false`
-> （为避开同机 Jaeger 的自描述 trace 串入），用 gRPC 上报前需改回 `true`。
-> 同机跑 Jaeger 时，更推荐改用下面的 HTTP 方案。
+> **前提**：PalTrace 侧的 gRPC 接收**默认已关闭**（`ENABLE_GRPC=false`），需显式开启：
+> `ENABLE_GRPC=true`，且 uvicorn 必须 `--workers 1`（多进程只有首个能 bind `:4317`）。
+>
+> ⚠️ 同机跑 Jaeger 时不要用 gRPC：Jaeger v2 的自埋点 exporter 默认就指向 `localhost:4317`，
+> 会把自描述 trace 灌进 PalTrace 污染统计。下面的 HTTP 方案没有这个问题。
 >
 > 快速判断是否已被 Jaeger 污染：`curl -s 'localhost:8000/api/traces?hours=24' | grep jaeger`
 > 有结果就说明串进来了。
@@ -213,12 +225,18 @@ export OTEL_RESOURCE_ATTRIBUTES=qwenpaw.user=liuxin,deployment.environment=prod
 | `STORAGE_BACKEND`           | `es`                              | `es` 或 `memory`                  |
 | `ES_URL`                    | `http://localhost:9200`           | ES 地址                            |
 | `ES_USER` / `ES_PASSWORD`   | 空                                 | ES 账号（无认证时留空）                    |
-| `ES_INDEX_PREFIX`           | `paltrace-spans`                   | 索引前缀，实际索引为 `<prefix>-YYYY.MM.DD` |
-| `ES_REFRESH`                | `true`                            | 写入后立即刷新；生产高吞吐建议 `false`          |
+| `ES_INDEX_PREFIX`           | `paltrace-spans`                   | 索引前缀，实际索引名由下面的粒度决定             |
+| `ES_INDEX_GRANULARITY`      | `month`                           | 索引粒度：`month` → `<prefix>-YYYY.MM`；`day` → `<prefix>-YYYY.MM.DD` |
+| `ES_SHARDS` / `ES_REPLICAS` | `3` / `1`                         | **新建**索引的分片/副本数。单节点 ES 请把副本设为 `0` |
+| `ES_REFRESH`                | `false`                           | 每次 bulk 后强制刷新。仅本地调试开 `true`，代价是吞吐差一个数量级 |
 | `HTTP_PORT`                 | `8000`                            | 看板 + API + OTLP/HTTP             |
-| `GRPC_PORT` / `ENABLE_GRPC` | `4317` / `true`                   | OTLP/gRPC                        |
+| `GRPC_PORT` / `ENABLE_GRPC` | `4317` / `false`                  | OTLP/gRPC（开启时必须 `--workers 1`）   |
+| `UVICORN_WORKERS`           | `4`（仅 Docker 启动方式生效）             | uvicorn 进程数；`memory` 后端必须为 `1`   |
 | `DROP_ATTRIBUTES`           | `gen_ai.prompt,gen_ai.completion` | 不入库的属性（隐私）                       |
 | `MEMORY_MAX_SPANS`          | `20000`                           | memory 后端环形缓冲上限                  |
+
+> 分片数 / 副本数**只影响新建索引**。改配置后想让当月索引立刻生效，
+> 需手动 `PUT /<index>/_settings`（副本数可随时改，**主分片数不可改**，须 reindex）。
 
 ---
 
@@ -246,8 +264,15 @@ paltrace/
 
 ## 六、设计要点（为什么这么做）
 
-- **双协议接收**：LoongSuite 默认发 gRPC 4317，只做 HTTP 会逼用户改采集端配置。  
-  gRPC 侧用 `MessageToDict()` 转成与 HTTP JSON **同构**的 dict，因此两条路径复用同一套解析逻辑。
+- **接收以 HTTP 为主，gRPC 默认关**：HTTP 是短连接，L4 负载均衡即可把请求分摊到多实例；
+  gRPC 是 HTTP/2 长连接，L4 只做**连接级**均衡（一个客户端建连后所有请求都打到同一实例，加实例无效），
+  且与 uvicorn 多 worker 互斥，故默认关闭。
+  保留 gRPC 代码是因为它用 `MessageToDict()` 转成与 HTTP JSON **同构**的 dict，两条路径复用同一套解析逻辑，成本极低。
+- **接收端点必须走线程池**：`POST /v1/traces` 声明为 `async def`，但落库用的是**同步**的 elasticsearch-py 客户端；
+  直接在事件循环里调同步 IO 会阻塞整个 loop、把所有请求（含统计 API）串行化，
+  故用 `run_in_threadpool` 丢进线程池。统计接口是 `def`，FastAPI 会自动丢线程池，同理。
+- **索引按月（可切回按天）**：一年 12 个索引而非 365 个，元数据开销低，清理粒度正好一个月。
+  两种命名都匹配 `<prefix>-*`，可共存——切换后历史索引照常可查，无需迁移或 reindex。
 - **看板零 CDN**：公司内网无外网，引 Chart.js 必然白屏，故图表用纯 CSS 实现。
 - **gen_ai 双版本兜底**：`experimental`（`gen_ai.usage.input_tokens`）与 `stable`（`gen_ai.usage.prompt_tokens`）命名不同，取数时按优先级回退。
 - **ES 7.x 必须用 7.x 客户端**：8.x 客户端面向 ES 8 API，且 `bulk()` 参数由 `body=` 改名为 `operations=`，混用直接报错。
@@ -262,7 +287,7 @@ paltrace/
 - 写入未攒批，每条 OTLP 请求一次 bulk
 - 无鉴权、无租户隔离
 - 无采样与背压
-- 按天索引，无 ILM 清理
+- 按月索引，无 ILM 自动清理（但清理本身很简单：`DELETE paltrace-spans-2026.08`）
 - 仅接入 traces，未接 metrics / logs
 - 超大 trace（数千 span）前端未做虚拟滚动，靠 `limit` 上限 + 折叠兜底
 
